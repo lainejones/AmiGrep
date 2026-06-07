@@ -44,6 +44,10 @@
 
 unsigned long __stack = 60000;   /* force a generous stack (deep recursion) */
 
+/* AmigaDOS version cookie (the C: Version command / $VER reads this) */
+static const char verstag[] __attribute__((used)) =
+    "$VER: AmiGrepGUI 1.0 (07.06.2026)";
+
 
 /* library bases (exec & dos are auto-opened by the C startup) */
 struct IntuitionBase *IntuitionBase = NULL;
@@ -90,6 +94,7 @@ struct Gui {
     BOOL           caseSens;       /* Case checkbox state                     */
     BOOL           stopReq;        /* Stop pressed during a search           */
     BOOL           closeReq;       /* window closed during a search          */
+    BOOL           quit;           /* unrecoverable failure -> leave eventLoop */
     ULONG          uiCounter;
 
     struct MsgPort   *appPort;     /* AppIcon message port (iconified)        */
@@ -159,7 +164,7 @@ static void setStatus(struct Gui *g, CONST_STRPTR text)
 {
     strncpy(g->status, (const char *)text, sizeof g->status - 1);
     g->status[sizeof g->status - 1] = '\0';
-    if (g->gStatus)
+    if (g->win && g->gStatus)        /* both must be live (iconified -> neither) */
         GT_SetGadgetAttrs(g->gStatus, g->win, NULL,
                           GTTX_Text, (ULONG)g->status, TAG_END);
 }
@@ -509,6 +514,10 @@ static void closeWin(struct Gui *g)
     if (g->glist) { FreeGadgets(g->glist);        g->glist = NULL; }
     if (g->vi)    { FreeVisualInfo(g->vi);         g->vi = NULL; }
     if (g->scr)   { UnlockPubScreen(NULL, g->scr); g->scr = NULL; }
+    /* FreeGadgets just freed every gadget; drop the dangling pointers so a
+     * stray setStatus()/refresh while iconified can't touch freed memory. */
+    g->gPattern = g->gPath = g->gPick = g->gFiles = g->gCase = NULL;
+    g->gSearch  = g->gStop = g->gStatus = g->gList = g->gHit  = NULL;
 }
 
 /* hide the window to a Workbench AppIcon */
@@ -527,7 +536,14 @@ static void doIconify(struct Gui *g)
     closeWin(g);
     g->appIcon = AddAppIconA(0L, 0L, (STRPTR)"AmiGrep", g->appPort,
                              (BPTR)0, g->dobj, NULL);
-    if (!g->appIcon) { buildWindow(g); return; }  /* failed: reopen */
+    if (!g->appIcon) {
+        /* AppIcon failed: we already closed the window, so reopen it rather
+         * than sit with neither a window nor an icon (eventLoop would Wait()
+         * on the AppIcon port forever - an unkillable task). */
+        if (!buildWindow(g)) { g->quit = TRUE; return; }  /* truly stuck: bail */
+        setStatus(g, "Could not iconify (AddAppIcon failed).");
+        return;
+    }
     g->iconified = TRUE;
 }
 
@@ -538,7 +554,9 @@ static void doUniconify(struct Gui *g)
     if (g->appIcon) { RemoveAppIcon(g->appIcon); g->appIcon = NULL; }
     if (g->appPort) while ((m = GetMsg(g->appPort))) ReplyMsg(m);
     g->iconified = FALSE;
-    buildWindow(g);                              /* restores saved fields */
+    /* If the window can't be reopened (screen lock / no RAM) there is nothing
+     * left to drive the loop, so quit cleanly instead of hanging. */
+    if (!buildWindow(g)) g->quit = TRUE;         /* restores saved fields */
 }
 
 /* ------------------------------------------------------------------ */
@@ -606,7 +624,7 @@ static void openResultDrawer(struct Gui *g, LONG sel)
 static void eventLoop(struct Gui *g)
 {
     BOOL done = FALSE;
-    while (!done) {
+    while (!done && !g->quit) {
         ULONG winSig = (g->win && g->win->UserPort)
                      ? (1UL << g->win->UserPort->mp_SigBit) : 0;
         ULONG appSig = g->appPort ? (1UL << g->appPort->mp_SigBit) : 0;
@@ -660,7 +678,7 @@ static void eventLoop(struct Gui *g)
                         ud = (ULONG)GTMENUITEM_USERDATA(it);
                         if (ud == MENU_ICONIFY)   doIconify(g);
                         else if (ud == MENU_QUIT) done = TRUE;
-                        if (g->iconified || done) break;
+                        if (g->iconified || done || g->quit) break;
                         mn = it->NextSelect;
                     }
                     break;
@@ -675,7 +693,7 @@ static void eventLoop(struct Gui *g)
                 default:
                     break;
                 }
-                if (g->iconified || done) break;  /* window gone / quitting */
+                if (g->iconified || done || g->quit) break;  /* window gone / quitting */
             }
         }
 

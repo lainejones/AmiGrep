@@ -24,13 +24,19 @@
 
 unsigned long __stack = 60000;   /* force a generous stack (deep recursion) */
 
+/* AmigaDOS version cookie (the C: Version command / $VER reads this) */
+static const char verstag[] __attribute__((used)) =
+    "$VER: AmiGrep 1.0 (07.06.2026)";
+
 #define TEMPLATE "PATTERN/A,PATH,FILE/K,CASE/S,NAMES/S"
 enum { ARG_PATTERN, ARG_PATH, ARG_FILE, ARG_CASE, ARG_NAMES, ARG_COUNT };
 
 static BOOL cliPoll(APTR user)
 {
     (void)user;
-    return (SetSignal(0L, 0L) & SIGBREAKF_CTRL_C) ? TRUE : FALSE;
+    /* read AND clear CTRL_C so the break is consumed (a later run / the shell
+     * won't see a stale break flag). */
+    return (SetSignal(0L, SIGBREAKF_CTRL_C) & SIGBREAKF_CTRL_C) ? TRUE : FALSE;
 }
 
 static BOOL cliFound(CONST_STRPTR path, ULONG line, CONST_STRPTR text, APTR user)
@@ -90,6 +96,7 @@ int main(void)
                    (LONG)st.filesScanned, (LONG)st.dirsScanned,
                    (LONG)(st.binarySkipped ? " (binaries skipped)" : ""),
                    (LONG)(st.aborted ? " (aborted)" : ""));
+            if (st.aborted) rc = RETURN_WARN;    /* 5: stopped via Ctrl-C */
         }
     }
 

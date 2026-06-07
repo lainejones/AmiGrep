@@ -14,9 +14,13 @@ Addressed in the working tree and rebuilt:
 - **M4 fixed** — binary/text is now decided from the **first block only** (grep's first-buffer heuristic); a binary file is skipped whole before any match is reported, so stats are consistent. Verified: a file with matches followed by a NUL went from `2 line(s) in 0 file(s)` (with 2 bogus hits) to a clean `0 line(s) … (binaries skipped)`; a file whose NUL is only past 8 KB correctly stays text.
 - **Size** — `build.sh` switched `-O2` → `-Os -msmall-code`: CLI 5,196 → **4,816 B**, GUI 12,032 → **10,400 B**. CLI re-verified under vamos.
 
+- **M2 fixed** — `closeWin()` now NULLs the gadget pointers (so a stray `setStatus()`/refresh while iconified can't touch freed gadgets), `setStatus()` also guards on `g->win`, and `doIconify()`/`doUniconify()` now check `buildWindow()`: if there's no window *and* no AppIcon to drive the loop they set a new `quit` flag instead of `Wait()`-ing forever on the AppIcon port (the unkillable-task hang). `eventLoop()` honours `quit`. GUI-only — failure path needs fault injection; the happy-path iconify/uniconify still needs a manual click test in WinUAE.
+- **L7 fixed** — `cliPoll()` now reads *and clears* `SIGBREAKF_CTRL_C` (consumes the break), and an aborted CLI search returns `RETURN_WARN` (5) instead of 0.
+- **L9 fixed** — both binaries now carry a `$VER:` cookie (`AmiGrep 1.0` / `AmiGrepGUI 1.0`); `Version AmiGrep` works.
+
 Engine tests: `tools/test_engine.c` links `src/grep.c` and drives `grepTree()` with an instrumented poll/match callback — used to verify M3/M4 under vamos without the GUI.
 
-Still open (not yet addressed): **M2** (iconify-failure hang/UAF — GUI-only, needs WinUAE + manual click to smoke-test) and the remaining Low items below.
+Still open: the remaining Low items (L1, L2, L3, L4, L6, L8, L10, L11, L12 — mostly flaky-media correctness and GUI niceties; L13 stale `.dbg` deleted).
 
 **Verified-good things first** (so they don't get "fixed"): the big `struct Ctx` (≈9.7 KB) is `AllocMem`'d off the stack and freed on both exit paths of `grepTree` (grep.c:300, 318, 326); every `recurse()` level allocates its own FIB via `AllocDosObject` and frees it (grep.c:250, 287) — the correct Examine/ExNext pattern, no shared-FIB misuse; every `Lock` has a matching `UnLock` (grep.c:268–271, 315–323); `closeWin()` order is correct (ClearMenuStrip → FreeMenus → CloseWindow → FreeGadgets → FreeVisualInfo → UnlockPubScreen); exit cleanup order in gui.c:710–721 is correct (RemoveAppIcon before draining/deleting the port, libraries last); `__stack = 60000` is honored by the libnix startup and is ample — recursion depth is bounded to ~260 levels by the 520-byte path buffer (AddPart fails first), at ~50 bytes/frame that's ~13 KB worst case.
 
