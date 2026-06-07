@@ -122,8 +122,13 @@ BOOL nameFilterInit(struct NameFilter *nf, CONST_STRPTR pat)
     if (r < 0) { nf->active = FALSE; return FALSE; }
 
     if (r == 1) {
-        /* wildcards present: match the whole name against the pattern as-is */
-        CopyMem((APTR)probe, nf->parsed, sizeof nf->parsed);
+        /* wildcards present: match the whole name against the pattern as-is.
+         * Re-parse directly into nf->parsed: copying a truncated token stream
+         * (probe is bigger than nf->parsed) would hand MatchPatternNoCase an
+         * unterminated buffer -> undefined behaviour. This way an over-long
+         * pattern fails loudly instead. */
+        r = ParsePatternNoCase((CONST_STRPTR)pat, (STRPTR)nf->parsed, (LONG)sizeof nf->parsed);
+        if (r < 0) { nf->active = FALSE; return FALSE; }
     } else {
         /* plain text: wrap as #?<pat>#? so it matches any name *containing* it
          * (mirrors the Find field's substring behaviour). */
@@ -173,7 +178,6 @@ static void grepOneFile(struct Ctx *c)
     ULONG lineNo = 1;
     BOOL binary = FALSE;
     BOOL fileMatched = FALSE;
-    BOOL overflowed = FALSE;     /* current line exceeded the line buffer      */
 
     fh = Open((STRPTR)c->path, MODE_OLDFILE);
     if (!fh) return;
@@ -201,15 +205,15 @@ static void grepOneFile(struct Ctx *c)
                                               c->foundUser))
                         c->stop = TRUE;
                 }
-                lineNo++; linePos = 0; overflowed = FALSE;
+                lineNo++; linePos = 0;
                 if (c->stop) break;
 
                 if (c->poll && ((++c->pollCounter & 63) == 0)) {
                     if (c->poll(c->pollUser)) { c->stop = TRUE; break; }
                 }
             } else if (ch != '\r') {
+                /* keep scanning past GREP_MAXLINE, silently dropping the excess */
                 if (linePos < (int)sizeof c->line - 1) c->line[linePos++] = ch;
-                else overflowed = TRUE;          /* keep scanning, drop excess  */
             }
         }
         if (binary) break;
@@ -230,7 +234,6 @@ static void grepOneFile(struct Ctx *c)
     }
 
 done:
-    (void)overflowed;
     Close(fh);
     if (binary) { c->st->binarySkipped++; c->st->filesScanned--; }
     else if (fileMatched) c->st->filesMatched++;

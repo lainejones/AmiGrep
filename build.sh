@@ -5,7 +5,7 @@ set -e
 export PATH=/opt/amiga/bin:$PATH
 
 CC=m68k-amigaos-gcc
-CFLAGS="-O2 -noixemul -Wall -Wno-pointer-sign -fomit-frame-pointer"
+CFLAGS="-Os -msmall-code -noixemul -Wall -Wno-pointer-sign -fomit-frame-pointer"
 
 mkdir -p out
 

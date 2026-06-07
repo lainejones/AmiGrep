@@ -60,10 +60,14 @@ Examples
 Run `AmiGrepGUI` (from Workbench or Shell). Enter the text to **Find**, an
 **In** path (default `SYS:`), optionally a **Files** wildcard and tick **Case**,
 then press **Search**. Matching lines appear in the listview as
-`path:line: text`; the status line shows the totals. **Double-click a result**
-to open its containing drawer in Workbench. **Stop** (or closing the window)
-aborts a running search. Matching is identical to the CLI. A **Project** menu
-(right mouse button) offers **Iconify** and **Quit**.
+`path:line: text`; the status line shows the totals. **Single-click** a result
+to copy its full `path:line: text` into the scrollable **Hit** gadget at the
+bottom (cursor keys scroll it — GadTools lists have no horizontal scroll).
+**Double-click a result** to open its containing drawer in Workbench — this
+needs `workbench.library` v44 (OS 3.5+); on OS 3.0–3.2 the status line says so
+instead of opening anything. **Stop** (or closing the window) aborts a running
+search. Matching is identical to the CLI. A **Project** menu (right mouse
+button) offers **Iconify** and **Quit**.
 
 ## Testing
 

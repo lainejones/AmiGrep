@@ -1,6 +1,18 @@
 # AmiGrep — Code Review
 
-Reviewed: `src/cli.c`, `src/grep.c`, `src/grep.h`, `src/gui.c`, `build.sh`, `README.md` (all read in full). Current stripped binaries: `out/AmiGrep` = 5,192 bytes, `out/AmiGrepGUI` = 11,988 bytes. No files modified.
+Reviewed: `src/cli.c`, `src/grep.c`, `src/grep.h`, `src/gui.c`, `build.sh`, `README.md` (all read in full).
+
+## 0. STATUS (2026-06-07 — fixes applied)
+
+Addressed in the working tree and rebuilt:
+
+- **H1 fixed** — `appendNum()` now takes a `bufsize` and never writes past `buf[bufsize-1]`.
+- **H2 fixed** — `openResultDrawer()` now requires `WorkbenchBase->lib_Version >= 44` and shows a status message on OS 3.0–3.2 instead of guruing.
+- **M1 fixed** — `nameFilterInit()`'s wildcard branch re-parses straight into `nf->parsed` (no truncated `CopyMem`); over-long FILE patterns now fail cleanly.
+- **L5 fixed** — dead `overflowed` variable removed from `grepOneFile()`.
+- **Size** — `build.sh` switched `-O2` → `-Os -msmall-code`: CLI 5,196 → **4,736 B**, GUI 12,032 → **10,320 B** (−460 / −1,712 B). CLI re-verified under vamos.
+
+Still open (not yet addressed): M2, M3, M4 and the remaining Low items below.
 
 **Verified-good things first** (so they don't get "fixed"): the big `struct Ctx` (≈9.7 KB) is `AllocMem`'d off the stack and freed on both exit paths of `grepTree` (grep.c:300, 318, 326); every `recurse()` level allocates its own FIB via `AllocDosObject` and frees it (grep.c:250, 287) — the correct Examine/ExNext pattern, no shared-FIB misuse; every `Lock` has a matching `UnLock` (grep.c:268–271, 315–323); `closeWin()` order is correct (ClearMenuStrip → FreeMenus → CloseWindow → FreeGadgets → FreeVisualInfo → UnlockPubScreen); exit cleanup order in gui.c:710–721 is correct (RemoveAppIcon before draining/deleting the port, libraries last); `__stack = 60000` is honored by the libnix startup and is ample — recursion depth is bounded to ~260 levels by the 520-byte path buffer (AddPart fails first), at ~50 bytes/frame that's ~13 KB worst case.
 

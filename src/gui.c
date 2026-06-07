@@ -113,15 +113,16 @@ struct ResNode {
 #define MENU_ICONIFY 1
 #define MENU_QUIT    2
 
-/* small unsigned-to-decimal helper (no sprintf under -noixemul) */
-static void appendNum(char *buf, ULONG v)
+/* small unsigned-to-decimal helper (no sprintf under -noixemul);
+ * bounded: never writes past buf[bufsize-1] */
+static void appendNum(char *buf, ULONG v, int bufsize)
 {
     char tmp[16];
     int  i = 0, j, l;
     if (v == 0) tmp[i++] = '0';
     while (v) { tmp[i++] = (char)('0' + (v % 10)); v /= 10; }
     l = (int)strlen(buf);
-    for (j = i - 1; j >= 0; j--) buf[l++] = tmp[j];
+    for (j = i - 1; j >= 0 && l < bufsize - 1; j--) buf[l++] = tmp[j];
     buf[l] = '\0';
 }
 
@@ -177,7 +178,7 @@ static BOOL guiFound(CONST_STRPTR path, ULONG line, CONST_STRPTR text, APTR user
     buf[sizeof buf - 1] = '\0';
     if (line) {                                   /* full match (path:line: text) */
         l = (int)strlen(buf);
-        if (l < (int)sizeof buf - 2) { buf[l++] = ':'; buf[l] = '\0'; appendNum(buf, line); }
+        if (l < (int)sizeof buf - 2) { buf[l++] = ':'; buf[l] = '\0'; appendNum(buf, line, (int)sizeof buf); }
         l = (int)strlen(buf);
         if (l < (int)sizeof buf - 3) { buf[l++] = ':'; buf[l++] = ' '; buf[l] = '\0';
             strncat(buf, (const char *)text, sizeof buf - 1 - strlen(buf)); }
@@ -296,9 +297,9 @@ static void doSearch(struct Gui *g)
     } else {
         char buf[80];
         buf[0] = '\0';
-        appendNum(buf, st.linesMatched);
+        appendNum(buf, st.linesMatched, (int)sizeof buf);
         strcat(buf, " line(s) in ");
-        appendNum(buf, st.filesMatched);
+        appendNum(buf, st.filesMatched, (int)sizeof buf);
         strcat(buf, st.aborted ? " file(s) - stopped" : " file(s)");
         setStatus(g, buf);
     }
@@ -584,7 +585,13 @@ static void openResultDrawer(struct Gui *g, LONG sel)
     char drawer[300];
 
     if (!rn) return;
-    if (!WorkbenchBase) { setStatus(g, "workbench.library not available."); return; }
+    /* OpenWorkbenchObject() is a V44 (OS 3.5+) LVO; we open the library at
+     * v37 for AddAppIconA, so calling it on OS 3.0/3.1 would jump into a
+     * nonexistent vector and guru. Check the actual library version. */
+    if (!WorkbenchBase || WorkbenchBase->lib_Version < 44) {
+        setStatus(g, "Needs workbench.library v44+ (OS 3.5).");
+        return;
+    }
     resultDrawer((CONST_STRPTR)rn->path, drawer, (int)sizeof drawer);
     if (drawer[0] == '\0') { setStatus(g, "Cannot determine drawer."); return; }
 
