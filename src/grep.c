@@ -176,20 +176,37 @@ static void grepOneFile(struct Ctx *c)
     LONG n;
     int  linePos = 0;
     ULONG lineNo = 1;
-    BOOL binary = FALSE;
     BOOL fileMatched = FALSE;
+    BOOL sniffed = FALSE;        /* have we classified the file yet?            */
 
     fh = Open((STRPTR)c->path, MODE_OLDFILE);
     if (!fh) return;
 
-    c->st->filesScanned++;
-
     while (!c->stop && (n = Read(fh, c->buf, (LONG)sizeof c->buf)) > 0) {
         LONG i;
+
+        /* M4: decide text-vs-binary up front, from the FIRST block only (grep's
+         * first-buffer heuristic). If that block holds a NUL the file is binary,
+         * so skip it whole - before any match is reported - and the stats stay
+         * consistent (no "N line(s) in 0 file(s)"). A NUL in a *later* block is
+         * dropped as noise below; the file has already been judged text. */
+        if (!sniffed) {
+            LONG k;
+            for (k = 0; k < n; k++) {
+                if (c->buf[k] == '\0') {         /* binary: skip the whole file */
+                    Close(fh);
+                    c->st->binarySkipped++;
+                    return;
+                }
+            }
+            c->st->filesScanned++;
+            sniffed = TRUE;
+        }
+
         for (i = 0; i < n; i++) {
             char ch = c->buf[i];
 
-            if (ch == '\0') { binary = TRUE; break; }   /* NUL -> binary file  */
+            if (ch == '\0') continue;            /* stray NUL in a text file     */
 
             if (ch == '\n') {
                 c->line[linePos] = '\0';
@@ -216,11 +233,15 @@ static void grepOneFile(struct Ctx *c)
                 if (linePos < (int)sizeof c->line - 1) c->line[linePos++] = ch;
             }
         }
-        if (binary) break;
+
+        /* M3: poll once per block too. A file made of very long lines (or no
+         * newline at all) would otherwise never reach the per-newline poll, so
+         * Stop/Ctrl-C was ignored and the GUI froze for the whole file. */
+        if (!c->stop && c->poll && c->poll(c->pollUser)) c->stop = TRUE;
     }
 
     /* trailing line with no newline */
-    if (!c->stop && !binary && linePos > 0) {
+    if (!c->stop && sniffed && linePos > 0) {
         c->line[linePos] = '\0';
         if (lineMatches(c->m, (CONST_STRPTR)c->line)) {
             c->st->linesMatched++;
@@ -233,10 +254,13 @@ static void grepOneFile(struct Ctx *c)
         }
     }
 
+    /* an empty file (or one whose first Read failed) opened fine but was never
+     * sniffed; count it as a scanned text file with no matches, as before. */
+    if (!sniffed) c->st->filesScanned++;
+
 done:
     Close(fh);
-    if (binary) { c->st->binarySkipped++; c->st->filesScanned--; }
-    else if (fileMatched) c->st->filesMatched++;
+    if (fileMatched) c->st->filesMatched++;
 }
 
 /* ------------------------------------------------------------------ */
