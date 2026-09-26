@@ -53,9 +53,6 @@ struct GrepStats {
 /* Prepare a matcher. Returns FALSE on a malformed / over-long pattern. */
 BOOL matcherInit(struct Matcher *m, CONST_STRPTR pattern, BOOL caseSensitive);
 
-/* TRUE if a single line matches the prepared matcher. */
-BOOL lineMatches(struct Matcher *m, CONST_STRPTR line);
-
 /* Prepare a filename filter. pat NULL/empty -> inactive (match every file).
  * Returns FALSE on a malformed / over-long pattern. */
 BOOL nameFilterInit(struct NameFilter *nf, CONST_STRPTR pat);

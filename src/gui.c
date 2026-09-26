@@ -21,6 +21,8 @@
 #include <exec/types.h>
 #include <exec/lists.h>
 #include <exec/nodes.h>
+#include <exec/memory.h>
+#include <exec/execbase.h>
 #include <intuition/intuition.h>
 #include <intuition/gadgetclass.h>
 #include <graphics/rastport.h>
@@ -87,6 +89,8 @@ struct Gui {
     struct Gadget *gHit;           /* read-only, scrollable full line of selection */
 
     struct List    results;        /* nodes shown in the listview            */
+    APTR           pool;           /* exec pool holding the results (V39+),
+                                    * NULL -> nodes are separate AllocVecs   */
     char           status[80];
     char           savePat[210];   /* Find text, preserved across resize/icon */
     char           savePath[210];  /* In text,   preserved across resize/icon */
@@ -109,10 +113,13 @@ struct Gui {
 };
 
 /* one result: a List node whose ln_Name is the display line, plus the raw
- * file path (both stored in the same allocation, after the node). */
+ * file path (both stored in the same allocation, after the node). The display
+ * line normally starts with the path, so then 'path' just points into it and
+ * pathLen says where it ends (it is not NUL-terminated there). */
 struct ResNode {
     struct Node node;
     char       *path;
+    ULONG       pathLen;
 };
 
 #define MENU_ICONIFY 1
@@ -135,28 +142,60 @@ static void appendNum(char *buf, ULONG v, int bufsize)
 /* result list management                                             */
 /* ------------------------------------------------------------------ */
 
+static void initResults(struct Gui *g)
+{
+    /* init the result list without pulling in amiga.lib's NewList() */
+    g->results.lh_Head     = (struct Node *)&g->results.lh_Tail;
+    g->results.lh_Tail     = NULL;
+    g->results.lh_TailPred = (struct Node *)&g->results.lh_Head;
+    g->results.lh_Type     = NT_UNKNOWN;
+}
+
 static void freeResults(struct Gui *g)
 {
     struct Node *n;
+    if (g->pool) {                 /* every node lives in the pool: one call */
+        DeletePool(g->pool);
+        g->pool = NULL;
+        initResults(g);
+        return;
+    }
     while ((n = RemHead(&g->results)))
         FreeVec(n);                /* node + name were one allocation        */
 }
 
-/* one allocation holds the ResNode, then the display string, then the path */
+/* one allocation holds the ResNode, the display string and - only when the
+ * display string doesn't already start with it - a copy of the path */
 static void addResult(struct Gui *g, CONST_STRPTR path, CONST_STRPTR text)
 {
     int dl = (int)strlen((const char *)text) + 1;
     int pl = (int)strlen((const char *)path) + 1;
-    struct ResNode *rn = (struct ResNode *)AllocVec(sizeof(struct ResNode) + dl + pl,
-                                                    MEMF_CLEAR);
-    char *d, *p;
+    BOOL shared = (pl <= dl && memcmp(text, path, pl - 1) == 0);
+    ULONG size = sizeof(struct ResNode) + dl + (shared ? 0 : pl);
+    struct ResNode *rn;
+    char *d;
+
+    /* Pools are exec V39+. Only start one while the list is empty, so a list
+     * is always entirely pooled or entirely AllocVec'd (see freeResults). */
+    if (!g->pool && g->results.lh_Head->ln_Succ == NULL &&
+        SysBase->LibNode.lib_Version >= 39)
+        g->pool = CreatePool(MEMF_ANY, 8192, 2048);
+
+    rn = (struct ResNode *)(g->pool ? AllocPooled(g->pool, size)
+                                    : AllocVec(size, MEMF_ANY));
     if (!rn) return;
     d = (char *)(rn + 1);
-    p = d + dl;
     CopyMem((APTR)text, d, dl);
-    CopyMem((APTR)path, p, pl);
+    rn->node.ln_Type = NT_UNKNOWN;
+    rn->node.ln_Pri  = 0;
     rn->node.ln_Name = d;
-    rn->path         = p;
+    rn->pathLen      = (ULONG)(pl - 1);
+    if (shared) {
+        rn->path = d;
+    } else {
+        rn->path = d + dl;
+        CopyMem((APTR)path, rn->path, pl);
+    }
     AddTail(&g->results, &rn->node);
 }
 
@@ -565,9 +604,9 @@ static void doUniconify(struct Gui *g)
 
 /* derive the drawer (containing directory) of an AmigaDOS path:
  *   "SYS:s/Startup-Sequence" -> "SYS:s"   ; "SYS:Disk.info" -> "SYS:"   */
-static void resultDrawer(CONST_STRPTR path, char *buf, int bufsz)
+static void resultDrawer(CONST_STRPTR path, int len, char *buf, int bufsz)
 {
-    int len = (int)strlen((const char *)path), i, n = 0;
+    int i, n = 0;
     for (i = len - 1; i >= 0; i--) {
         if (path[i] == '/') { n = i;     break; }   /* drop the slash       */
         if (path[i] == ':') { n = i + 1; break; }   /* keep the volume ':'  */
@@ -610,7 +649,7 @@ static void openResultDrawer(struct Gui *g, LONG sel)
         setStatus(g, "Needs workbench.library v44+ (OS 3.5).");
         return;
     }
-    resultDrawer((CONST_STRPTR)rn->path, drawer, (int)sizeof drawer);
+    resultDrawer((CONST_STRPTR)rn->path, (int)rn->pathLen, drawer, (int)sizeof drawer);
     if (drawer[0] == '\0') { setStatus(g, "Cannot determine drawer."); return; }
 
     if (OpenWorkbenchObject((STRPTR)drawer, TAG_END))
@@ -712,11 +751,7 @@ int main(void)
     struct Gui g;
     int rc = 20;
     memset(&g, 0, sizeof g);
-    /* init the result list without pulling in amiga.lib's NewList() */
-    g.results.lh_Head     = (struct Node *)&g.results.lh_Tail;
-    g.results.lh_Tail     = NULL;
-    g.results.lh_TailPred = (struct Node *)&g.results.lh_Head;
-    g.results.lh_Type     = NT_UNKNOWN;
+    initResults(&g);
     g.lastSel = -1;
     strcpy(g.savePath, "SYS:");        /* default In; other fields stay empty */
 

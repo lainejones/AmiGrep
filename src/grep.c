@@ -30,21 +30,39 @@ static void str_lower(char *dst, CONST_STRPTR src, int max)
     dst[i] = '\0';
 }
 
-/* substring search; needle already lower-cased when !caseSensitive */
-static BOOL contains(CONST_STRPTR hay, CONST_STRPTR needle, int nl, BOOL cs)
+/* case-sensitive substring search in a line of known length (hl >= nl >= 1):
+ * scan for the needle's first byte, then compare the rest. */
+static BOOL contains(const char *hay, int hl, const char *needle, int nl)
 {
-    int hl, i, k;
-    if (nl == 0) return TRUE;                 /* empty needle matches all      */
-    hl = (int)strlen((const char *)hay);
-    for (i = 0; i + nl <= hl; i++) {
-        for (k = 0; k < nl; k++) {
-            char h = (char)hay[i + k];
-            if (!cs) h = to_lower(h);
-            if (h != needle[k]) break;
-        }
-        if (k == nl) return TRUE;
+    const char *p = hay, *last = hay + hl - nl;
+    char f = needle[0];
+
+    for (;;) {
+        while (p <= last && *p != f) p++;
+        if (p > last) return FALSE;
+        if (nl == 1 || memcmp(p + 1, needle + 1, nl - 1) == 0) return TRUE;
+        p++;
     }
-    return FALSE;
+}
+
+/* case-insensitive variant (A-Z folding only, as to_lower); the needle is
+ * already lower-case. The first-byte scan tests both cases of that byte, so
+ * only candidate positions pay for folding the rest. */
+static BOOL contains_ci(const char *hay, int hl, const char *needle, int nl)
+{
+    const char *p = hay, *last = hay + hl - nl;
+    char f = needle[0], fu = f;
+    int k;
+
+    if ((unsigned char)(f - 'a') < 26) fu = (char)(f - 32);
+    for (;;) {
+        while (p <= last && *p != f && *p != fu) p++;
+        if (p > last) return FALSE;
+        for (k = 1; k < nl; k++)
+            if (to_lower(p[k]) != needle[k]) break;
+        if (k == nl) return TRUE;
+        p++;
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -93,14 +111,19 @@ BOOL matcherInit(struct Matcher *m, CONST_STRPTR pattern, BOOL caseSensitive)
     return TRUE;
 }
 
-BOOL lineMatches(struct Matcher *m, CONST_STRPTR line)
+/* line: len bytes, NUL-terminated, no embedded NULs */
+static BOOL lineMatches(struct Matcher *m, CONST_STRPTR line, int len)
 {
     if (m->useWild) {
         return (m->caseSensitive
                 ? MatchPattern      ((STRPTR)m->parsed, (STRPTR)line)
                 : MatchPatternNoCase((STRPTR)m->parsed, (STRPTR)line)) ? TRUE : FALSE;
     }
-    return contains(line, (CONST_STRPTR)m->needle, m->needleLen, m->caseSensitive);
+    if (m->needleLen == 0) return TRUE;       /* empty needle matches all      */
+    if (len < m->needleLen) return FALSE;
+    if (m->caseSensitive)
+        return contains((const char *)line, len, m->needle, m->needleLen);
+    return contains_ci((const char *)line, len, m->needle, m->needleLen);
 }
 
 /* ------------------------------------------------------------------ */
@@ -169,21 +192,30 @@ struct Ctx {
     ULONG              pollCounter;
 };
 
-/* Search a single already-named file (c->path). Counts/reports via c->st. */
-static void grepOneFile(struct Ctx *c)
+/* Search one file: 'name' relative to directory lock 'dir' (c->path holds
+ * its full name for reporting), or c->path itself when dir is 0 (the search
+ * root is a plain file). Counts/reports via c->st. */
+static void grepOneFile(struct Ctx *c, BPTR dir, CONST_STRPTR name)
 {
     BPTR fh;
     LONG n;
-    int  linePos = 0;
+    char *lp   = c->line;               /* end of the line gathered so far */
+    char *lmax = c->line + GREP_MAXLINE - 1;
     ULONG lineNo = 1;
     BOOL fileMatched = FALSE;
     BOOL sniffed = FALSE;        /* have we classified the file yet?            */
 
-    fh = Open((STRPTR)c->path, MODE_OLDFILE);
+    if (dir) {                   /* relative open: no path walk from the root   */
+        BPTR old = CurrentDir(dir);
+        fh = Open((STRPTR)name, MODE_OLDFILE);
+        CurrentDir(old);
+    } else {
+        fh = Open((STRPTR)c->path, MODE_OLDFILE);
+    }
     if (!fh) return;
 
     while (!c->stop && (n = Read(fh, c->buf, (LONG)sizeof c->buf)) > 0) {
-        LONG i;
+        const char *p, *end;
 
         /* M4: decide text-vs-binary up front, from the FIRST block only (grep's
          * first-buffer heuristic). If that block holds a NUL the file is binary,
@@ -203,14 +235,22 @@ static void grepOneFile(struct Ctx *c)
             sniffed = TRUE;
         }
 
-        for (i = 0; i < n; i++) {
-            char ch = c->buf[i];
+        for (p = c->buf, end = c->buf + n; p < end; p++) {
+            char ch = *p;
+
+            /* fast path: every byte above CR is plain line text */
+            if ((unsigned char)ch > '\r') {
+                /* keep scanning past GREP_MAXLINE, silently dropping the excess */
+                if (lp < lmax) *lp++ = ch;
+                continue;
+            }
 
             if (ch == '\0') continue;            /* stray NUL in a text file     */
 
             if (ch == '\n') {
-                c->line[linePos] = '\0';
-                if (lineMatches(c->m, (CONST_STRPTR)c->line)) {
+                int linePos = (int)(lp - c->line);
+                *lp = '\0';
+                if (lineMatches(c->m, (CONST_STRPTR)c->line, linePos)) {
                     c->st->linesMatched++;
                     fileMatched = TRUE;
                     if (c->st->namesOnly) {
@@ -222,15 +262,14 @@ static void grepOneFile(struct Ctx *c)
                                               c->foundUser))
                         c->stop = TRUE;
                 }
-                lineNo++; linePos = 0;
+                lineNo++; lp = c->line;
                 if (c->stop) break;
 
                 if (c->poll && ((++c->pollCounter & 63) == 0)) {
                     if (c->poll(c->pollUser)) { c->stop = TRUE; break; }
                 }
-            } else if (ch != '\r') {
-                /* keep scanning past GREP_MAXLINE, silently dropping the excess */
-                if (linePos < (int)sizeof c->line - 1) c->line[linePos++] = ch;
+            } else if (ch != '\r') {             /* TAB and other low controls   */
+                if (lp < lmax) *lp++ = ch;
             }
         }
 
@@ -241,9 +280,9 @@ static void grepOneFile(struct Ctx *c)
     }
 
     /* trailing line with no newline */
-    if (!c->stop && sniffed && linePos > 0) {
-        c->line[linePos] = '\0';
-        if (lineMatches(c->m, (CONST_STRPTR)c->line)) {
+    if (!c->stop && sniffed && lp > c->line) {
+        *lp = '\0';
+        if (lineMatches(c->m, (CONST_STRPTR)c->line, (int)(lp - c->line))) {
             c->st->linesMatched++;
             fileMatched = TRUE;
             if (c->found) {
@@ -267,10 +306,161 @@ done:
 /* recursive walk                                                     */
 /* ------------------------------------------------------------------ */
 
+/* ExAll buffer per directory level (long-aligned via AllocVec). 4 KB holds
+ * ~150 ED_TYPE entries, so a typical drawer is read in one handler call. */
+#define EXALL_BUFSIZE 4096
+
+static void walkDir(struct Ctx *c, BPTR dir);
+
+/* A soft link: resolve it and grep it if it points at a file. Links to
+ * directories are never followed - one pointing at an ancestor would loop
+ * (bounded only by the path cap) and one pointing outside the root would
+ * re-scan unrelated trees with duplicate hits. */
+static void softLink(struct Ctx *c, BPTR dir, CONST_STRPTR name)
+{
+    struct FileInfoBlock *fib;
+    BPTR old, lk;
+
+    old = CurrentDir(dir);
+    lk  = Lock((STRPTR)name, ACCESS_READ);
+    CurrentDir(old);
+    if (!lk) return;                     /* dangling link                */
+
+    fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
+    if (fib) {
+        /* filter on the target's name, as the old full-path Lock did */
+        if (Examine(lk, fib) && fib->fib_DirEntryType < 0 &&
+            nameFilterMatch(c->nf, fib->fib_FileName))
+            grepOneFile(c, dir, name);
+        FreeDosObject(DOS_FIB, fib);
+    }
+    UnLock(lk);
+}
+
+/* One directory entry, named relative to its parent lock 'dir'. c->path is
+ * only built for reporting; the filesystem is always addressed relative to
+ * 'dir', so DOS never re-walks the full path from the root. */
+static void handleEntry(struct Ctx *c, BPTR dir, CONST_STRPTR name, LONG type)
+{
+    LONG plen = (LONG)strlen(c->path);
+
+    if (!AddPart((STRPTR)c->path, (STRPTR)name, (ULONG)sizeof c->path)) {
+        c->path[plen] = '\0';            /* AddPart may have mutated the
+                                          * buffer before failing; restore
+                                          * or the rest of this dir scans
+                                          * against a corrupted base path */
+        return;                          /* full path would overflow    */
+    }
+
+    if (type == ST_SOFTLINK) {
+        softLink(c, dir, name);
+    } else if (type == ST_LINKDIR) {
+        /* hard link to a directory: not followed (see softLink) */
+    } else if (type > 0) {
+        BPTR old, child;
+        c->st->dirsScanned++;
+        old   = CurrentDir(dir);
+        child = Lock((STRPTR)name, ACCESS_READ);
+        CurrentDir(old);
+        if (child) {
+            walkDir(c, child);
+            UnLock(child);
+        }
+    } else {
+        if (nameFilterMatch(c->nf, name))
+            grepOneFile(c, dir, name);
+    }
+
+    c->path[plen] = '\0';                /* restore parent path         */
+}
+
+/* per-entry poll, same cadence as before (every 64 entries) */
+static BOOL pollStop(struct Ctx *c)
+{
+    if (c->poll && ((++c->pollCounter & 63) == 0)) {
+        if (c->poll(c->pollUser)) c->stop = TRUE;
+    }
+    return c->stop;
+}
+
+/* Fallback enumeration with Examine/ExNext, for handlers that don't know
+ * ACTION_EXAMINE_ALL (and for when the ExAll buffers can't be allocated). */
+static void walkDirExNext(struct Ctx *c, BPTR dir)
+{
+    struct FileInfoBlock *fib =
+        (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
+    if (!fib) return;
+
+    if (Examine(dir, fib)) {
+        while (!c->stop && ExNext(dir, fib)) {
+            if (pollStop(c)) break;
+            handleEntry(c, dir, (CONST_STRPTR)fib->fib_FileName,
+                        fib->fib_DirEntryType);
+        }
+    }
+    FreeDosObject(DOS_FIB, fib);
+}
+
+/* Enumerate a directory with ExAll (one handler call per batch of entries
+ * instead of one ExNext per entry), in the handler's own ExNext order. */
+static void walkDir(struct Ctx *c, BPTR dir)
+{
+    struct ExAllControl *eac;
+    struct ExAllData    *buf, *ead;
+    BOOL more, first = TRUE, fallback = FALSE;
+    LONG err;
+
+    if (c->stop) return;
+
+    eac = (struct ExAllControl *)AllocDosObject(DOS_EXALLCONTROL, NULL);
+    buf = (struct ExAllData *)AllocVec(EXALL_BUFSIZE, MEMF_ANY);
+    if (!eac || !buf) {
+        if (buf) FreeVec(buf);
+        if (eac) FreeDosObject(DOS_EXALLCONTROL, eac);
+        walkDirExNext(c, dir);
+        return;
+    }
+    eac->eac_LastKey = 0;
+
+    do {
+        SetIoErr(0);
+        more = ExAll(dir, buf, EXALL_BUFSIZE, ED_TYPE, eac);
+        err  = more ? 0 : IoErr();
+        if (!more && err != ERROR_NO_MORE_ENTRIES) {
+            /* Failed before returning anything: ERROR_ACTION_NOT_KNOWN from
+             * an old/odd handler (some answer with other codes), so redo the
+             * directory the classic way. A later failure just ends it. */
+            if (first && eac->eac_Entries == 0) fallback = TRUE;
+            break;
+        }
+        first = FALSE;
+        if (eac->eac_Entries == 0) continue;
+
+        for (ead = buf; ead; ead = ead->ed_Next) {
+            if (pollStop(c)) break;
+            handleEntry(c, dir, (CONST_STRPTR)ead->ed_Name, ead->ed_Type);
+            if (c->stop) break;
+        }
+    } while (more && !c->stop);
+
+    /* stopped with the scan still open: tell the handler to drop its state
+     * (ExAllEnd is V39+; on V37 drain the remaining batches instead) */
+    if (more) {
+        if (DOSBase->dl_lib.lib_Version >= 39)
+            ExAllEnd(dir, buf, EXALL_BUFSIZE, ED_TYPE, eac);
+        else
+            while (ExAll(dir, buf, EXALL_BUFSIZE, ED_TYPE, eac)) ;
+    }
+
+    FreeVec(buf);
+    FreeDosObject(DOS_EXALLCONTROL, eac);
+
+    if (fallback) walkDirExNext(c, dir);
+}
+
 static void recurse(struct Ctx *c, BPTR lock)
 {
     struct FileInfoBlock *fib;
-    LONG plen;
 
     if (c->stop) return;
 
@@ -279,35 +469,11 @@ static void recurse(struct Ctx *c, BPTR lock)
 
     if (Examine(lock, fib)) {
         if (fib->fib_DirEntryType > 0) {
-            /* directory -> enumerate its children */
-            while (!c->stop && ExNext(lock, fib)) {
-
-                if (c->poll && ((++c->pollCounter & 63) == 0)) {
-                    if (c->poll(c->pollUser)) { c->stop = TRUE; break; }
-                }
-
-                plen = (LONG)strlen(c->path);
-                if (!AddPart((STRPTR)c->path, fib->fib_FileName, (ULONG)sizeof c->path))
-                    continue;                    /* full path would overflow    */
-
-                if (fib->fib_DirEntryType > 0) {
-                    c->st->dirsScanned++;
-                    BPTR child = Lock((STRPTR)c->path, ACCESS_READ);
-                    if (child) {
-                        recurse(c, child);
-                        UnLock(child);
-                    }
-                } else {
-                    if (nameFilterMatch(c->nf, fib->fib_FileName))
-                        grepOneFile(c);
-                }
-
-                c->path[plen] = '\0';            /* restore parent path         */
-            }
+            walkDir(c, lock);            /* directory -> enumerate children */
         } else {
             /* the root itself is a plain file */
             if (nameFilterMatch(c->nf, fib->fib_FileName))
-                grepOneFile(c);
+                grepOneFile(c, 0, NULL);
         }
     }
 
