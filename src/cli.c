@@ -26,7 +26,7 @@ unsigned long __stack = 60000;   /* force a generous stack (deep recursion) */
 
 /* AmigaDOS version cookie (the C: Version command / $VER reads this) */
 static const char verstag[] __attribute__((used)) =
-    "$VER: AmiGrep 1.0 (07.06.2026)";
+    "$VER: AmiGrep 1.1 (01.10.2026)";
 
 #define TEMPLATE "PATTERN/A,PATH,FILE/K,CASE/S,NAMES/S"
 enum { ARG_PATTERN, ARG_PATH, ARG_FILE, ARG_CASE, ARG_NAMES, ARG_COUNT };
