@@ -21,6 +21,20 @@ Built with amiga-gcc (`m68k-amigaos-gcc`) under WSL — pure NDK, no MUI/ReActio
     tools/uae_test.py     deploy / headless-test helper for the WinUAE 030 box
     out/                  compiled AmigaOS executables
 
+## Installing
+
+Unpack the **.lha** wherever you keep tools (`LhA x AmiGrep-1.0.1.lha Work:`), open the
+AmiGrep drawer and double-click **AmiGrepGUI**. For the CLI version in any Shell, copy it
+to `C:`:
+
+    Copy AmiGrep/AmiGrep C:
+
+From the **.zip** instead: a zip can't store AmigaDOS protection bits, so the programs
+arrive without their `e` (executable) flag and won't run until you set it:
+
+    Protect AmiGrep/AmiGrep +e
+    Protect AmiGrep/AmiGrepGUI +e
+
 ## Build
 
 From Windows, inside WSL:
