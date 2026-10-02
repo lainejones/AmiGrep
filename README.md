@@ -1,6 +1,6 @@
 # AmiGrep
 
-A content-search ("grep") tool for AmigaOS 3.2 (and any 3.x). Recurses a
+A content-search ("grep") tool for AmigaOS 2.04 and newer (tested on 3.1 and 3.2). Recurses a
 volume, assign, directory or single file, opens every **text** file, and
 reports each line that matches a pattern as `path:line: text`. Ships as a CLI
 (`AmiGrep`) and a GadTools GUI (`AmiGrepGUI`).
@@ -19,7 +19,9 @@ Built with amiga-gcc (`m68k-amigaos-gcc`) under WSL — pure NDK, no MUI/ReActio
     src/gui.c             GadTools GUI front end
     build.sh              build both with amiga-gcc
     tools/uae_test.py     deploy / headless-test helper for the WinUAE 030 box
-    out/                  compiled AmigaOS executables
+    icons/                the shipped icons: AmiGrepGUI.info, and drawer.info
+                          (goes beside the package drawer as AmiGrep.info)
+    out/                  compiled AmigaOS executables (not in git)
 
 ## Installing
 
@@ -41,7 +43,16 @@ From Windows, inside WSL:
 
     wsl -e bash -lc 'cd /mnt/c/projects/AmiGrep && sh build.sh'
 
-Outputs `out/AmiGrep` and `out/AmiGrepGUI` (AmigaOS m68k hunk executables).
+Outputs `out/AmiGrep` and `out/AmiGrepGUI` (AmigaOS m68k hunk executables) and
+copies `icons/AmiGrepGUI.info` beside the GUI.
+
+The release package is an `AmiGrep` drawer holding `AmiGrep`, `AmiGrepGUI`,
+`AmiGrepGUI.info` and `README.md`, with `icons/drawer.info` beside the drawer as
+`AmiGrep.info` (without it the unpacked drawer is invisible on Workbench). The
+CLI `AmiGrep` ships without an icon. `icons/AmiGrepGUI.info` is made by
+`makeicon_amigrep.py` in the shared Amiga tools folder next to this project:
+
+    wsl -e bash -lc 'cd /mnt/c/projects/AmiGrep && python3 ../tools/makeicon_amigrep.py icons/AmiGrepGUI.info'
 
 ## CLI usage
 
@@ -102,4 +113,7 @@ button) offers **Iconify** and **Quit**.
   responsive because the scan pumps Intuition messages between lines.
 * The engine keeps its 8 KB read buffer + path/line buffers in an
   `AllocMem`'d context, not on the stack, so deep recursion stays cheap.
-* Requires OS 3.x (libraries opened at v37+; asl/workbench/icon are optional).
+* Requires AmigaOS 2.04 or newer: the libraries are opened at v37
+  (asl/workbench/icon are optional), and the V39+ features are used only when
+  present (`ExAllEnd`, the GUI's memory pool; opening a result's drawer needs
+  workbench.library v44, as above). Tested on OS 3.1 and 3.2.
