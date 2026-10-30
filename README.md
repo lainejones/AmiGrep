@@ -19,6 +19,7 @@ Built with amiga-gcc (`m68k-amigaos-gcc`) under WSL — pure NDK, no MUI/ReActio
     src/gui.c             GadTools GUI front end
     src/amigui.c / .h     shared GUI parts (About box, settings pages,
                           ENV:/ENVARC: files) - copied from ../tools/amigui
+    LICENSE               GPL-3.0
     build.sh              build both with amiga-gcc
     tools/uae_test.py     deploy / headless-test helper for the WinUAE 030 box
     icons/                the shipped icons: AmiGrepGUI.info, and drawer.info
@@ -27,7 +28,7 @@ Built with amiga-gcc (`m68k-amigaos-gcc`) under WSL — pure NDK, no MUI/ReActio
 
 ## Installing
 
-Unpack the **.lha** wherever you keep tools (`LhA x AmiGrep-1.1.lha Work:`), open the
+Unpack the **.lha** wherever you keep tools (`LhA x AmiGrep-1.1.1.lha Work:`), open the
 AmiGrep drawer and double-click **AmiGrepGUI**. For the CLI version in any Shell, copy it
 to `C:`:
 
@@ -49,7 +50,7 @@ Outputs `out/AmiGrep` and `out/AmiGrepGUI` (AmigaOS m68k hunk executables) and
 copies `icons/AmiGrepGUI.info` beside the GUI.
 
 The release package is an `AmiGrep` drawer holding `AmiGrep`, `AmiGrepGUI`,
-`AmiGrepGUI.info` and `README.md`, with `icons/drawer.info` beside the drawer as
+`AmiGrepGUI.info`, `README.md` and `LICENSE`, with `icons/drawer.info` beside the drawer as
 `AmiGrep.info` (without it the unpacked drawer is invisible on Workbench). The
 CLI `AmiGrep` ships without an icon. `icons/AmiGrepGUI.info` is made by
 `makeicon_amigrep.py` in the shared Amiga tools folder next to this project:
@@ -160,3 +161,8 @@ AmiGrepGUI reads no tooltypes, so there are none for the file to override.
   (asl/workbench/icon are optional), and the V39+ features are used only when
   present (`ExAllEnd`, the GUI's memory pool; opening a result's drawer needs
   workbench.library v44, as above). Tested on OS 3.1 and 3.2.
+
+## Licence
+
+GPL-3.0 (the GNU General Public License, version 3) - see [`LICENSE`](LICENSE).
+Project > About... in AmiGrepGUI says the same.

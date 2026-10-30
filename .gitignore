@@ -6,3 +6,8 @@ out/
 *~
 .DS_Store
 Thumbs.db
+
+# release staging (dist/<Name>-<ver>/) and archives; dist/notes-*.md is tracked
+dist/*/
+dist/*.zip
+dist/*.lha
