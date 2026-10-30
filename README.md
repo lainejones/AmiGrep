@@ -17,6 +17,8 @@ Built with amiga-gcc (`m68k-amigaos-gcc`) under WSL — pure NDK, no MUI/ReActio
     src/grep.c / grep.h   shared recursive content-search engine + matcher
     src/cli.c             command-line front end
     src/gui.c             GadTools GUI front end
+    src/amigui.c / .h     shared GUI parts (About box, settings pages,
+                          ENV:/ENVARC: files) - copied from ../tools/amigui
     build.sh              build both with amiga-gcc
     tools/uae_test.py     deploy / headless-test helper for the WinUAE 030 box
     icons/                the shipped icons: AmiGrepGUI.info, and drawer.info
@@ -91,8 +93,49 @@ bottom (cursor keys scroll it — GadTools lists have no horizontal scroll).
 **Double-click a result** to open its containing drawer in Workbench — this
 needs `workbench.library` v44 (OS 3.5+); on OS 3.0–3.2 the status line says so
 instead of opening anything. **Stop** (or closing the window) aborts a running
-search. Matching is identical to the CLI. A **Project** menu (right mouse
-button) offers **Iconify** and **Quit**.
+search. Matching is identical to the CLI.
+
+The window fits a 640x200 NTSC screen with Topaz 8 and opens at most 520
+pixels wide on any screen; it can be resized. If the screen font is too big
+for the layout, the window uses Topaz 8.
+
+### Menus (right mouse button)
+
+| Menu | Item | Key |
+|------|------|-----|
+| Project | About... | Amiga-? |
+| | Iconify (to a Workbench AppIcon) | Amiga-I |
+| | Quit | Amiga-Q |
+| Search | Search | Amiga-S |
+| | Stop (works while a search runs) | Amiga-. |
+| | Choose drawer... (same as **...**) | Amiga-D |
+| | Clear results | Amiga-L |
+| Result | View (runs the viewer on the picked hit's file) | Amiga-V |
+| | Open drawer (the picked hit's drawer) | Amiga-O |
+| Settings | Search defaults... (Find, In, Files, Case at start) | |
+| | Programs... (the viewer) | |
+| | Snapshot window / Unsnapshot window | |
+
+### Settings
+
+Each settings page has **Save** (kept: `ENV:` and `ENVARC:`), **Use** (`ENV:`
+only, until the next reboot), **Defaults** and **Cancel**. *Search defaults*
+also has **Use current** to take what is in the main window now. *Snapshot
+window* saves the window's place and size; *Unsnapshot window* goes back to
+the default at the next start (a snapshot is always kept on the screen).
+
+The settings live in `ENV:AmiGrep.prefs` (else `ENVARC:AmiGrep.prefs`), plain
+text, one `KEY=value` a line:
+
+    PATTERN=           ; Find at start (empty)
+    PATH=SYS:          ; In at start
+    FILES=             ; Files filter at start (empty = every file)
+    CASE=0             ; 1 = the Case box ticked at start
+    VIEWER=SYS:Utilities/MultiView   ; View runs: <viewer> "<file>"
+    WINDOW=40,12,520,188             ; only after Snapshot window
+
+Precedence, lowest first: the built-in defaults, then the settings file.
+AmiGrepGUI reads no tooltypes, so there are none for the file to override.
 
 ## Testing
 

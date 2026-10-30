@@ -13,14 +13,14 @@ echo "== AmiGrep (CLI) =="
 $CC $CFLAGS -s -o out/AmiGrep    src/cli.c src/grep.c
 
 echo "== AmiGrepGUI =="
-$CC $CFLAGS -s -o out/AmiGrepGUI src/gui.c src/grep.c
+$CC $CFLAGS -s -o out/AmiGrepGUI src/gui.c src/grep.c src/amigui.c
 
 # the GUI's icon as shipped in the release (the CLI ships without one);
 # the package also puts icons/drawer.info beside the drawer as AmiGrep.info
 cp icons/AmiGrepGUI.info out/
 
 # keep an unstripped + disassembly of the GUI for crash mapping
-$CC $CFLAGS -g -o out/AmiGrepGUI.dbg src/gui.c src/grep.c
+$CC $CFLAGS -g -o out/AmiGrepGUI.dbg src/gui.c src/grep.c src/amigui.c
 m68k-amigaos-objdump -dS out/AmiGrepGUI.dbg > out/AmiGrepGUI.dis 2>/dev/null || true
 
 # Strip at LINK time with -s (above), NEVER the standalone m68k-amigaos-strip:
