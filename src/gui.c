@@ -58,11 +58,11 @@
 
 unsigned long __stack = 60000;   /* force a generous stack (deep recursion) */
 
-#define AMIGREP_VERSION "1.1"
+#define AMIGREP_VERSION "1.1.1"
 
 /* AmigaDOS version cookie (the C: Version command / $VER reads this) */
 static const char verstag[] __attribute__((used)) =
-    "$VER: AmiGrepGUI " AMIGREP_VERSION " (01.10.2026)";
+    "$VER: AmiGrepGUI " AMIGREP_VERSION " (30.10.2026)";
 
 
 /* library bases (exec & dos are auto-opened by the C startup) */
