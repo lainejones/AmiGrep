@@ -1,0 +1,70 @@
+; -------------------------------------------------------------------------
+; AmiGrep - Installer script
+; Copies AmiGrepGUI, its icon, the README and the licence into a drawer of
+; your choice, and the CLI AmiGrep to C: (or into that drawer). Run it again
+; to update; your settings (ENVARC:AmiGrep.prefs) are kept.
+; -------------------------------------------------------------------------
+(set @app-name "AmiGrep")
+(complete 0)
+
+(if (not (and (exists "AmiGrep") (exists "AmiGrepGUI")))
+    (abort "Can't find the AmiGrep files next to this script.\n\n"
+           "Run the installer from the drawer it came in."))
+
+(message "AmiGrep 1.1.2 - finds text inside files\n\n"
+         "AmiGrep searches the text files in a volume, assign or drawer and all the "
+         "drawers in it, and lists every line that holds what you are looking for. "
+         "AmiGrepGUI is the window version; AmiGrep is the same search for the Shell.")
+
+; the questions first; nothing changes until the copying starts
+(set target
+    (askdir (prompt "Where should the AmiGrep drawer go?")
+            (help "A drawer called AmiGrep is made here (or updated, if it is "
+                  "already there). It holds AmiGrepGUI, the README and the licence.")
+            (default (if (exists "SYS:Tools" (noreq)) "SYS:Tools" "SYS:"))))
+(set target (tackon target "AmiGrep"))
+
+(set toc
+    (askbool (prompt "Copy the Shell command AmiGrep to C:?\n\n"
+                     "Then you can type AmiGrep in any Shell.")
+             (help "Say no to put it in the AmiGrep drawer instead.")
+             (choices "Yes" "No")
+             (default 1)))
+(complete 20)
+
+; the drawer gets this Workbench's own drawer icon (ENV:Sys/def_drawer.info)
+(if (not (exists target (noreq))) (makedir target (infos)))
+
+(copyfiles (prompt "Copying AmiGrepGUI")
+           (help @copyfiles-help)
+           (source "AmiGrepGUI")
+           (dest target)
+           (infos))
+(run (cat "Protect >NIL: \"" (tackon target "AmiGrepGUI") "\" +rwed"))
+(copyfiles (source "README.md") (dest target) (nogauge))
+(copyfiles (source "LICENSE") (dest target) (nogauge))
+(complete 60)
+
+(set clidir (if toc "C:" target))
+(copyfiles (prompt "Copying AmiGrep")
+           (help @copyfiles-help)
+           (source "AmiGrep")
+           (dest clidir)
+           (nogauge))
+(run (cat "Protect >NIL: \"" (tackon clidir "AmiGrep") "\" +rwed"))
+(complete 90)
+
+; the package drawer came with a plain drawer icon so it shows when unpacked;
+; from now on it has this Workbench's own (ENV:Sys/def_drawer.info). Not at a
+; disk root: a disk root has no drawer icon, and it may be locked.
+(set pkgdir (expandpath ""))
+(if (and (exists "ENV:Sys/def_drawer.info" (noreq))
+         (<> (substr pkgdir (- (strlen pkgdir) 1) 1) ":"))
+    (if (exists (cat pkgdir ".info") (noreq))
+        (run (cat "Copy >NIL: ENV:Sys/def_drawer.info \"" pkgdir ".info\""))))
+(complete 100)
+
+(message "AmiGrep 1.1.2 is installed in " target ".\n\n"
+         "Double-click AmiGrepGUI to search, or type AmiGrep PATTERN [PATH] in a Shell"
+         (if toc "." " (the command is in that drawer)."))
+(exit (quiet))

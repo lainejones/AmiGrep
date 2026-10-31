@@ -22,20 +22,33 @@ Built with amiga-gcc (`m68k-amigaos-gcc`) under WSL — pure NDK, no MUI/ReActio
     LICENSE               GPL-3.0
     build.sh              build both with amiga-gcc
     tools/uae_test.py     deploy / headless-test helper for the WinUAE 030 box
-    icons/                the shipped icons: AmiGrepGUI.info, and drawer.info
-                          (goes beside the package drawer as AmiGrep.info)
+    Install_AmiGrep       the Installer script shipped in the package
+    icons/                the shipped icons: AmiGrepGUI.info, Install_AmiGrep.info,
+                          and drawer.info (goes beside the package drawer as
+                          AmiGrep.info)
     out/                  compiled AmigaOS executables (not in git)
 
 ## Installing
 
-Unpack the **.lha** wherever you keep tools (`LhA x AmiGrep-1.1.1.lha Work:`), open the
-AmiGrep drawer and double-click **AmiGrepGUI**. For the CLI version in any Shell, copy it
-to `C:`:
+Unpack the **.lha** anywhere (`LhA x AmiGrep-1.1.2.lha RAM:`), open the AmiGrep drawer and
+double-click **Install_AmiGrep**. It asks two things:
+
+* where the AmiGrep drawer should go (default `SYS:Tools`): AmiGrepGUI, its icon, this
+  README and `LICENSE` are copied there, and the new drawer gets your Workbench's own
+  drawer icon;
+* whether to copy the CLI `AmiGrep` to `C:` (default yes), so it runs in any Shell. Say no
+  and it goes into the AmiGrep drawer instead.
+
+Run it again to update; your settings (`ENVARC:AmiGrep.prefs`) are kept.
+
+Both programs also run straight from the unpacked drawer: double-click **AmiGrepGUI**
+there, or copy the CLI to `C:` by hand:
 
     Copy AmiGrep/AmiGrep C:
 
 From the **.zip** instead: a zip can't store AmigaDOS protection bits, so the programs
-arrive without their `e` (executable) flag and won't run until you set it:
+arrive without their `e` (executable) flag. The installer sets it on the copies it
+installs; to run them from the unpacked drawer, set it yourself:
 
     Protect AmiGrep/AmiGrep +e
     Protect AmiGrep/AmiGrepGUI +e
@@ -50,9 +63,12 @@ Outputs `out/AmiGrep` and `out/AmiGrepGUI` (AmigaOS m68k hunk executables) and
 copies `icons/AmiGrepGUI.info` beside the GUI.
 
 The release package is an `AmiGrep` drawer holding `AmiGrep`, `AmiGrepGUI`,
-`AmiGrepGUI.info`, `README.md` and `LICENSE`, with `icons/drawer.info` beside the drawer as
-`AmiGrep.info` (without it the unpacked drawer is invisible on Workbench). The
-CLI `AmiGrep` ships without an icon. `icons/AmiGrepGUI.info` is made by
+`AmiGrepGUI.info`, `Install_AmiGrep` (with `icons/Install_AmiGrep.info` as its icon:
+default tool `Installer`, tooltypes `APPNAME=AmiGrep` and `DEFUSER=AVERAGE`), `README.md`
+and `LICENSE`, with `icons/drawer.info` (a plain blue drawer from
+`../tools/makeicon_drawer32.py`) beside the drawer as `AmiGrep.info` (without it the
+unpacked drawer is invisible on Workbench; the installer swaps it for your Workbench's own
+drawer icon). The CLI `AmiGrep` ships without an icon. `icons/AmiGrepGUI.info` is made by
 `makeicon_amigrep.py` in the shared Amiga tools folder next to this project:
 
     wsl -e bash -lc 'cd /mnt/c/projects/AmiGrep && python3 ../tools/makeicon_amigrep.py icons/AmiGrepGUI.info'
